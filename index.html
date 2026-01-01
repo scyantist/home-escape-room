@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Home Escape</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; background: #0b0f19; color: #e9eefc; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 28px 18px 60px; }
+    .card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 16px;
+      padding: 18px 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+    h1 { font-size: 22px; margin: 0 0 10px; letter-spacing: 0.2px; }
+    p { line-height: 1.45; margin: 10px 0; color: rgba(233,238,252,0.92); }
+    .stage { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px;
+      background: rgba(124,92,255,0.18); border: 1px solid rgba(124,92,255,0.35); }
+    .row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    input {
+      flex: 1 1 180px;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.25);
+      color: #e9eefc;
+      font-size: 16px;
+      letter-spacing: 4px;
+      text-align: center;
+    }
+    button {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.10);
+      color: #e9eefc;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: rgba(255,255,255,0.14); }
+    .hint { margin-top: 12px; display: none; padding: 12px; border-radius: 12px;
+      background: rgba(0,0,0,0.22); border: 1px dashed rgba(255,255,255,0.18); }
+    .msg { margin-top: 12px; min-height: 22px; }
+    .ok { color: #8dffb0; }
+    .bad { color: #ff8d8d; }
+    .small { font-size: 12px; opacity: 0.85; margin-top: 12px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; }
+    .linkish { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <span class="stage" id="stagePill">Stage 1 of 3</span>
+      <button id="resetBtn" class="linkish" title="Reset progress">Reset</button>
+    </div>
+
+    <div class="card">
+      <h1 id="title">Operation: Find the Treasure</h1>
+      <p id="story"></p>
+
+      <div id="codeArea">
+        <p><strong>Enter the 4-digit code:</strong></p>
+        <div class="row">
+          <input id="codeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="4" placeholder="• • • •" />
+          <button id="unlockBtn">Unlock</button>
+          <button id="hintBtn" type="button">Hint</button>
+        </div>
+        <div class="msg" id="msg"></div>
+        <div class="hint" id="hintBox"></div>
+      </div>
+
+      <div id="finalArea" style="display:none;">
+        <p id="finalText"></p>
+        <p class="small">🎁 If you want to replay later, hit Reset in the top-right.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /***** CUSTOMIZE THIS SECTION *****/
+    const CONFIG = {
+      // Change these to your three 4-digit codes
+      codes: ["1234", "5678", "9012"],
+
+      // Customize text per stage
+      stages: [
+        {
+          title: "Operation: Find the Treasure",
+          story: "Welcome, Agent. Your mission begins now. Somewhere in this house is a slip of paper with a 4-digit code. Find it and enter it to unlock the next clue.",
+          hint: "Start where a mission briefing might be read… (or choose a spot you want her to go first)."
+        },
+        {
+          title: "Locked Door, Open Mind",
+          story: "Nice work. The next code is hidden in a new location. Find the second slip of paper and enter its 4-digit code.",
+          hint: "Think: a place you visit every day without thinking."
+        },
+        {
+          title: "Final Lock",
+          story: "One more to go. Find the last slip of paper and enter its code to reveal the treasure location.",
+          hint: "The final code is near something that belongs to *both* of you."
+        }
+      ],
+
+      // The final reveal after Stage 3 is unlocked
+      finalReveal: "✅ Mission complete. The treasure is hidden: **(PUT YOUR HIDING SPOT HERE)**"
+    };
+    /***** END CUSTOMIZE SECTION *****/
+
+    const STORAGE_KEY = "home_escape_stage"; // 0,1,2,3 (3 means complete)
+
+    const stagePill = document.getElementById("stagePill");
+    const titleEl = document.getElementById("title");
+    const storyEl = document.getElementById("story");
+    const codeInput = document.getElementById("codeInput");
+    const unlockBtn = document.getElementById("unlockBtn");
+    const hintBtn = document.getElementById("hintBtn");
+    const hintBox = document.getElementById("hintBox");
+    const msgEl = document.getElementById("msg");
+    const resetBtn = document.getElementById("resetBtn");
+    const codeArea = document.getElementById("codeArea");
+    const finalArea = document.getElementById("finalArea");
+    const finalText = document.getElementById("finalText");
+
+    function getStage() {
+      const v = Number(localStorage.getItem(STORAGE_KEY) ?? "0");
+      return Number.isFinite(v) ? Math.max(0, Math.min(3, v)) : 0;
+    }
+
+    function setStage(n) {
+      localStorage.setItem(STORAGE_KEY, String(n));
+      render();
+    }
+
+    function render() {
+      const stage = getStage();
+
+      msgEl.textContent = "";
+      msgEl.className = "msg";
+      hintBox.style.display = "none";
+      hintBox.textContent = "";
+      codeInput.value = "";
+      codeInput.focus();
+
+      if (stage >= 3) {
+        stagePill.textContent = "Complete";
+        titleEl.textContent = "🎉 Escape Complete";
+        storyEl.textContent = "You did it.";
+        codeArea.style.display = "none";
+        finalArea.style.display = "block";
+        // allow **bold** in the final reveal
+        finalText.innerHTML = CONFIG.finalReveal.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        return;
+      }
+
+      stagePill.textContent = `Stage ${stage + 1} of 3`;
+      titleEl.textContent = CONFIG.stages[stage].title;
+      storyEl.textContent = CONFIG.stages[stage].story;
+      codeArea.style.display = "block";
+      finalArea.style.display = "none";
+    }
+
+    function normalizeCode(s) {
+      return String(s).replace(/\D/g, "").slice(0, 4);
+    }
+
+    unlockBtn.addEventListener("click", () => {
+      const stage = getStage();
+      const typed = normalizeCode(codeInput.value);
+      codeInput.value = typed;
+
+      if (typed.length !== 4) {
+        msgEl.textContent = "Enter a 4-digit code.";
+        msgEl.classList.add("bad");
+        return;
+      }
+
+      if (typed === CONFIG.codes[stage]) {
+        msgEl.textContent = "Unlocked ✅";
+        msgEl.classList.add("ok");
+        // Tiny delay for drama
+        setTimeout(() => setStage(stage + 1), 550);
+      } else {
+        msgEl.textContent = "Nope — try again.";
+        msgEl.classList.add("bad");
+      }
+    });
+
+    // Enter key submits
+    codeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") unlockBtn.click();
+    });
+
+    // Keep input numeric-ish
+    codeInput.addEventListener("input", () => {
+      codeInput.value = normalizeCode(codeInput.value);
+    });
+
+    hintBtn.addEventListener("click", () => {
+      const stage = getStage();
+      hintBox.textContent = CONFIG.stages[stage].hint;
+      hintBox.style.display = "block";
+    });
+
+    resetBtn.addEventListener("click", () => {
+      localStorage.removeItem(STORAGE_KEY);
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
+
